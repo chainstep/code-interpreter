@@ -130,6 +130,7 @@ services:
         container_name: sandbox-runner
         restart: always
         privileged: true
+        group: host
         devices:
             - ${KVM_DEVICE_PATH:-/dev/kvm}:/dev/kvm
         ports:
