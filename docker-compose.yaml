@@ -131,12 +131,7 @@ services:
         restart: always
         privileged: true
         cgroup: host
-        entrypoint: >
-          /bin/sh -c "
-          mkdir -p /usr/sbin &&
-          ln -sf $$(which mount) /usr/sbin/mount &&
-          exec /usr/local/bin/start-direct-sandbox.sh
-          "
+        entrypoint: > /bin/sh -c " mkdir -p /usr/sbin && ln -sf $$(which mount) /usr/sbin/mount && exec /usr/local/bin/start-direct-sandbox.sh "
         devices:
             - ${KVM_DEVICE_PATH:-/dev/kvm}:/dev/kvm
         ports:
