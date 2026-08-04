@@ -125,6 +125,8 @@ services:
           context: .
           dockerfile: api/Dockerfile
           target: sandbox-runner-${KVM_ENABLED:-true}
+          args: 
+            KVM_ENABLED: ${KVM_ENABLED}
         container_name: sandbox-runner
         restart: always
         privileged: false
