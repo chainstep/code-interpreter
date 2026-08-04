@@ -252,9 +252,6 @@ FROM sandbox-runner-base AS sandbox-runner
 
 COPY --from=sandbox-build / /sandbox-rootfs/
 
-COPY docker/sandbox-runner-healthcheck.sh /sandbox-rootfs/usr/local/bin/sandbox-runner-healthcheck.sh
-RUN chmod +x /sandbox-rootfs/usr/local/bin/sandbox-runner-healthcheck.sh
-
 RUN sed -i '/^cgroup_mem_swap_max/d' /sandbox-rootfs/sandbox_api/config/sandbox.cfg
 
 RUN mkdir -p /host-packages
