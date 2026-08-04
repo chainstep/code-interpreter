@@ -129,7 +129,7 @@ services:
             KVM_ENABLED: ${KVM_ENABLED}
         container_name: sandbox-runner
         restart: always
-        privileged: false
+        privileged: true
         devices:
             - ${KVM_DEVICE_PATH:-/dev/kvm}:/dev/kvm
         ports:
