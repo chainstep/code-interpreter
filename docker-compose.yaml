@@ -131,23 +131,14 @@ services:
         restart: always
         privileged: true
         cgroup: host
-        entrypoint: |
-          /bin/sh -c "
-          mkdir -p /usr/sbin &&
-          if [ -f /bin/mount ]; then
-            ln -sf /bin/mount /usr/sbin/mount;
-          else
-            ln -sf /usr/bin/mount /usr/sbin/mount;
-          fi &&
-          exec /usr/local/bin/start-direct-sandbox.sh
-          "
+        # ENTRYPOINT BLOCK REMOVED ENTIRELY
         devices:
           - ${KVM_DEVICE_PATH:-/dev/kvm}:/dev/kvm
         ports:
           - 2000:2000
         volumes:
           - ${SANDBOX_PACKAGES_PATH:-./data/pkgs}:/host-packages:ro
-          - /sys/fs/cgroup:/sys/fs/cgroup:ro   # <-- RESTORE THIS MOUNT
+          - /sys/fs/cgroup:/sys/fs/cgroup:ro   # <-- ENSURE THIS IS MOUNTED
         environment:
           - KVM_ENABLED=${KVM_ENABLED:-true}
           - LAUNCHER_PACKAGES_HOST=/disabled-host-packages
