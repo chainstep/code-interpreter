@@ -21,4 +21,14 @@ if [ "$fd_limit" -gt 0 ]; then
     fi
 fi
 
-curl -fsS --max-time "$timeout_seconds" "$url" >/dev/null
+if command -v curl >/dev/null 2>&1; then
+    curl -fsS --max-time "$timeout_seconds" "$url" >/dev/null
+elif command -v bun >/dev/null 2>&1; then
+    timeout "$timeout_seconds" bun -e "
+        const response = await fetch('${url}');
+        process.exit(response.ok ? 0 : 1);
+    " >/dev/null
+else
+    echo "sandbox-runner healthcheck has no HTTP client (curl or bun) available" >&2
+    exit 2
+fi

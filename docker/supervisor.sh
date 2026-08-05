@@ -6,11 +6,12 @@
 # KVM_ENABLED=true  (default): libkrun microVM + NsJail — full isolation
 # KVM_ENABLED=false:           private mount namespace + NsJail — nsjail isolation, no guest kernel
 #
-# The no-KVM path uses unshare --mount (NOT chroot) because the Linux kernel
-# explicitly blocks clone(CLONE_NEWUSER) for processes inside a chroot jail —
-# and NsJail requires user namespaces for its sandbox isolation.  By creating a
-# private mount namespace instead, CLONE_NEWUSER succeeds while the Debian rootfs
-# paths are still presented to NsJail via bind-mounts over the Fedora base dirs.
+# The no-KVM path enters the Debian sandbox rootfs with pivot_root inside a
+# private mount namespace (unshare --mount), never with chroot: the kernel
+# blocks clone(CLONE_NEWUSER) for chrooted processes and NsJail requires user
+# namespaces.  After a pivot_root the process root is the mount namespace root,
+# so user namespaces keep working while the supervisor and worker stay in the
+# container's own namespace with the Fedora userland untouched.
 #
 # cgroup v2 delegation: supervisor drains all processes out of the root cgroup
 # into an 'init/' sub-cgroup (including PID 1) and enables +memory +pids on the

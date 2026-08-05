@@ -4,7 +4,10 @@ echo "Starting Sandbox (direct NsJail, no microVM) on port 2000..."
 
 ROOTFS="${SANDBOX_ROOTFS:-/sandbox-rootfs}"
 
-mkdir -p /sandbox_api /pkgs
+if [ ! -x "$ROOTFS/sandbox_api/entrypoint.sh" ]; then
+    echo "FATAL: no sandbox rootfs at $ROOTFS - the directory-root image target is required when KVM_ENABLED=false"
+    exit 1
+fi
 
 if mount -o remount,rw /sys/fs/cgroup 2>/dev/null; then
     echo "[sandbox] Remounted cgroupfs as rw"
@@ -27,52 +30,53 @@ else
     echo "[sandbox] WARNING: could not enable controllers on root ($_remaining procs remain)"
 fi
 
-PROC_SUBMOUNTS=$(awk '$5 ~ /^\/proc\/./ {print $5}' /proc/self/mountinfo 2>/dev/null | sort -r)
-if [ -n "$PROC_SUBMOUNTS" ]; then
-    echo "[sandbox] Removing $(echo "$PROC_SUBMOUNTS" | wc -l) /proc submounts for fresh procfs support..."
-    for mnt in $PROC_SUBMOUNTS; do
-        umount "$mnt" 2>/dev/null || true
-    done
-    REMAINING=$(awk '$5 ~ /^\/proc\/./ {print $5}' /proc/self/mountinfo 2>/dev/null | wc -l)
-    if [ "$REMAINING" -eq 0 ]; then
-        echo "[sandbox] All /proc submounts removed"
-    else
-        echo "[sandbox] WARNING: $REMAINING /proc submounts remain"
-    fi
-else
-    echo "[sandbox] No /proc submounts to remove"
-fi
-
 export SANDBOX_ROOTFS="$ROOTFS"
 
 exec unshare --mount bash -c '
     ROOTFS="${SANDBOX_ROOTFS:-/sandbox-rootfs}"
 
-    mount -o bind,ro "$ROOTFS/usr/sbin"     /usr/sbin    || { echo "FATAL: cannot bind /usr/sbin"; exit 1; }
-    mount -o bind,ro "$ROOTFS/usr/lib"      /usr/lib     || { echo "FATAL: cannot bind /usr/lib"; exit 1; }
+    mount --bind "$ROOTFS" "$ROOTFS" || { echo "FATAL: cannot bind $ROOTFS onto itself"; exit 1; }
 
-    if [ -d "$ROOTFS/usr/lib64" ] && ! [ -L "$ROOTFS/usr/lib64" ]; then
-        mount -o bind,ro "$ROOTFS/usr/lib64" /usr/lib64 2>/dev/null || \
-            echo "[sandbox] WARNING: could not bind /usr/lib64 - sandboxed binaries may fail to exec"
+    mkdir -p "$ROOTFS/proc" "$ROOTFS/sys" "$ROOTFS/dev" "$ROOTFS/pkgs" "$ROOTFS/tmp" "$ROOTFS/.oldroot"
+
+    if mount -t proc proc "$ROOTFS/proc" 2>/dev/null; then
+        echo "[sandbox] Mounted fresh procfs"
+    else
+        echo "[sandbox] WARNING: fresh procfs unavailable, reusing the container /proc"
+        mount --rbind /proc "$ROOTFS/proc" || { echo "FATAL: cannot bind /proc"; exit 1; }
     fi
 
-    mount -o bind,ro "$ROOTFS/usr/local"    /usr/local   || { echo "FATAL: cannot bind /usr/local"; exit 1; }
-    mount -o bind,ro "$ROOTFS/sandbox_api"  /sandbox_api || { echo "FATAL: cannot bind /sandbox_api"; exit 1; }
-    mount -o bind,ro "$ROOTFS/pkgs"       /pkgs      || { echo "FATAL: cannot bind /pkgs"; exit 1; }
+    mount --rbind /sys "$ROOTFS/sys" || { echo "FATAL: cannot bind /sys"; exit 1; }
+    mount --rbind /dev "$ROOTFS/dev" || { echo "FATAL: cannot bind /dev"; exit 1; }
 
-    if [ -d /host-packages ]; then
-        mount --bind /host-packages /pkgs 2>/dev/null || \
-            echo "WARNING: could not bind /host-packages - sandbox will run without packages"
+    for host_file in /etc/resolv.conf /etc/hosts /etc/hostname; do
+        [ -f "$host_file" ] || continue
+        [ -e "$ROOTFS$host_file" ] || : > "$ROOTFS$host_file" 2>/dev/null || continue
+        mount --bind "$host_file" "$ROOTFS$host_file" 2>/dev/null || \
+            echo "[sandbox] WARNING: could not bind $host_file"
+    done
+
+    if [ -d /host-packages ] && [ -n "$(ls -A /host-packages 2>/dev/null)" ]; then
+        mount --bind /host-packages "$ROOTFS/pkgs" || \
+            echo "[sandbox] WARNING: could not bind /host-packages - sandbox will run without packages"
+    elif [ -z "$(ls -A "$ROOTFS/pkgs" 2>/dev/null)" ]; then
+        echo "[sandbox] WARNING: no packages found - populate the host package directory or no runtime will be available"
     fi
 
-    mount -o bind,ro "$ROOTFS/usr/bin" /usr/bin || { echo "FATAL: cannot bind /usr/bin"; exit 1; }
+    chmod 1777 "$ROOTFS/tmp" 2>/dev/null || true
 
-    multiarch_libdir=$(find /usr/lib -maxdepth 1 -type d -name "*-linux-gnu" -print -quit)
-    if [ -n "$multiarch_libdir" ]; then
-        export LD_LIBRARY_PATH="$multiarch_libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    cd "$ROOTFS" || { echo "FATAL: cannot enter $ROOTFS"; exit 1; }
+    pivot_root . .oldroot || { echo "FATAL: pivot_root into $ROOTFS failed"; exit 1; }
+    cd /
+
+    if command -v umount >/dev/null 2>&1; then
+        umount -l /.oldroot 2>/dev/null || echo "[sandbox] WARNING: could not detach the previous root"
+        rmdir /.oldroot 2>/dev/null || true
+    else
+        echo "[sandbox] WARNING: umount is unavailable, the previous root stays mounted at /.oldroot"
     fi
 
-    export PATH="/root/.bun/bin:$PATH"
+    echo "[sandbox] Running on the sandbox rootfs"
 
     exec /sandbox_api/entrypoint.sh
 '
